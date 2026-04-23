@@ -1,0 +1,47 @@
+Technical Report: Action Graph Configuration for VIO on Iris Drone
+Project: Integrating OpenVINS with Pegasus Simulator (Iris Drone)
+Objective: Establish a synchronized ROS 2 data stream of Stereo Images and IMU data.
+1. Overview
+To enable Visual-Inertial Odometry (VIO), we must bridge the gap between the simulated physics in Isaac Sim and the ROS 2 workspace. The Action Graph serves as the middleware, ensuring that every image frame is paired with high-frequency IMU samples sharing a unified simulation timestamp.
+2. Prerequisite: Sensor Placement
+Before building the graph, ensure the Iris drone has the required hardware prims:
+Stereo Pair: Inside the Iris prim hierarchy, add two Vision > Camera prims (e.g., camera_left and camera_right).
+IMU: Add a Sensors > IMU prim at the drone's center of mass.
+Note: Ensure all prims are under the drone’s base link to maintain fixed relative transforms.
+3. Action Graph Walkthrough
+Step A: Core Initialization
+Create a new Action Graph (Window > Visual Scripting > Action Graph).
+On Playback Tick: Drives the entire graph execution.
+Isaac Create Render Product: Create two of these nodes. Link one to camera_left and one to camera_right. Set the resolution (e.g., 640x480).
+Step B: The ROS 2 Bridge
+ROS2 Context: Ensure the Domain ID matches your local ROS 2 environment (default is 0).
+Isaac Read Simulation Time: Provides the timestamp input. This is vital for OpenVINS to prevent EKF divergence due to "clock drift."
+Step C: Image Streaming (Stereo)
+For each camera (Left and Right), create the following sequence:
+ROS2 Publish Image:
+Input: Connect the Render Product from Step A.
+Topic: /sim/left/image and /sim/right/image.
+Frame ID: sim_camera_left / sim_camera_right.
+ROS2 Publish Camera Info:
+Connect the same Render Product.
+Topic: /sim/left/camera_info and /sim/right/camera_info.
+Note: OpenVINS uses these topics to automatically pull focal lengths and distortion models.
+Step D: IMU Streaming
+Isaac Read IMU Node: Link this to your IMU prim.
+ROS2 Publish IMU:
+Input: Connect data from the Read IMU node.
+Topic: /sim/imu.
+Frame ID: sim_imu.
+Frequency: Ensure the "On Playback Tick" is running at a high rate (e.g., 100Hz+) to satisfy the VIO's need for high-frequency motion data.
+4. Coordinate Frame Mapping
+NVIDIA's VSLAM and OpenVINS handle coordinate systems differently. Use this mapping for your configuration:
+Sensor	Isaac Sim Axis	ROS / OpenVINS Expectation
+Camera	+Y Up, -Z Forward	+Z Forward, +X Right, +Y Down
+IMU	+Z Up (Gravity -9.8)	+Z Up (Gravity -9.8)
+To fix the Camera axis, apply a -90 degree rotation on the X-axis in the Camera Info node settings or the URDF.
+5. Configuration Checklist for OpenVINS
+Once the graph is "Live" (indicated by green nodes during simulation play), verify the following in your terminal:
+ros2 topic hz /sim/imu (Should be >100Hz)
+ros2 topic hz /sim/left/image (Should be ~20-30Hz)
+ros2 topic echo /sim/left/camera_info (Ensure K and D matrices are not all zeros).
+Next Step: Would you like the YAML configuration template to map these specific /sim/ topics into the OpenVINS estimator?
